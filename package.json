@@ -1,0 +1,14 @@
+{
+  "name": "sinobros-poker-backend",
+  "version": "1.0.0",
+  "description": "SinoBros Heads-Up Texas Hold'em REST backend",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/index.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
