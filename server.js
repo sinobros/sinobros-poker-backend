@@ -1,9 +1,14 @@
-import { createServer } from 'node:http';
+import fs from 'node:fs';
+import https from 'node:https';
 import { randomUUID } from 'node:crypto';
 import { createMatch, joinMatch, applyAction, applyNextHand, publicState } from './engine.js';
 import { getMatch, setMatch, allMatches, getLeaderboard, addLeaderboardEntry } from './store.js';
 
-const PORT = process.env.PORT || 8787;
+const PORT = Number(process.env.PORT || 8787);
+const HOST = process.env.HOST || '0.0.0.0';
+const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN || 'golfmat.ch';
+const SSL_KEY = process.env.SSL_KEY;
+const SSL_CERT = process.env.SSL_CERT;
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
@@ -59,8 +64,8 @@ function route(method, pathname) {
   return null;
 }
 
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost`);
+const requestHandler = async (req, res) => {
+  const url = new URL(req.url, `https://${PUBLIC_DOMAIN}`);
   const pathname = url.pathname;
 
   if (req.method === 'OPTIONS') return cors(res);
@@ -152,8 +157,30 @@ const server = createServer(async (req, res) => {
   } catch (err) {
     return json(res, 400, { error: err.message });
   }
-});
+};
 
-server.listen(PORT, () => {
-  console.log(`SinoBros Poker API listening on http://localhost:${PORT}`);
-});
+if (!SSL_KEY || !SSL_CERT) {
+  console.error('Failed to start server: SSL_KEY and SSL_CERT environment variables are required');
+  process.exit(1);
+}
+
+try {
+  const sslOptions = {
+    key: fs.readFileSync(SSL_KEY),
+    cert: fs.readFileSync(SSL_CERT),
+  };
+
+  const server = https.createServer(sslOptions, requestHandler);
+
+  server.on('error', err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+
+  server.listen(PORT, HOST, () => {
+    console.log(`SinoBros Poker API listening on https://${PUBLIC_DOMAIN}:${PORT} (bound to ${HOST})`);
+  });
+} catch (err) {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+}
