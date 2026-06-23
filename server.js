@@ -6,7 +6,6 @@ import { getMatch, setMatch, allMatches, getLeaderboard, addLeaderboardEntry } f
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
-const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN || 'golfmat.ch';
 const SSL_KEY = process.env.SSL_KEY;
 const SSL_CERT = process.env.SSL_CERT;
 
@@ -65,7 +64,7 @@ function route(method, pathname) {
 }
 
 const requestHandler = async (req, res) => {
-  const url = new URL(req.url, `https://${PUBLIC_DOMAIN}`);
+  const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
   if (req.method === 'OPTIONS') return cors(res);
@@ -178,7 +177,7 @@ try {
   });
 
   server.listen(PORT, HOST, () => {
-    console.log(`SinoBros Poker API listening on https://${PUBLIC_DOMAIN}:${PORT} (bound to ${HOST})`);
+    console.log(`SinoBros Poker API listening on HTTPS port ${PORT} (bound to ${HOST})`);
   });
 } catch (err) {
   console.error('Failed to start server:', err);
