@@ -66,7 +66,7 @@ function normalizeMatchCode(value) {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, ts: Date.now(), matches: allMatches().length, welcome:"welcome" });
+  res.json({ ok: true, ts: Date.now(), matches: allMatches().length });
 });
 
 app.get('/api/leaderboard', (req, res) => {
