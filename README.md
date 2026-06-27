@@ -2,28 +2,29 @@
 
 Node REST backend for the SinoBros Heads-Up Texas Hold'em table.
 
-The static frontend lives in `sinobros/sinobros.github.io` and calls this API from GitHub Pages. This backend is designed to run over HTTPS on port `8787` for whatever domain points at the host.
+The static frontend lives in `sinobros/sinobros.github.io` and calls this API from GitHub Pages. This backend is designed to run on `https://golfmat.ch:8787`.
 
 ## Run
 
-The server defaults to HTTPS port `8787` and binds to `0.0.0.0` so it is reachable from outside the host on any domain that points at it.
+The server defaults to `https://golfmat.ch:8787` and binds to `0.0.0.0` so it is reachable from outside the host.
 
 Required environment variables:
 
-- `SSL_KEY`: path to the private key PEM for the served domain
-- `SSL_CERT`: path to the certificate PEM for the served domain
+- `SSL_KEY`: path to the private key PEM for `golfmat.ch`
+- `SSL_CERT`: path to the certificate PEM for `golfmat.ch`
 
 Optional environment variables:
 
 - `PORT`: listen port, default `8787`
 - `HOST`: bind host, default `0.0.0.0`
+- `PUBLIC_DOMAIN`: domain used in logs and URL parsing, default `golfmat.ch`
 
 ```bash
 SSL_KEY=/path/to/privkey.pem SSL_CERT=/path/to/fullchain.pem npm start
 ```
 
 ```bash
-curl https://your-domain.example:8787/health
+curl https://golfmat.ch:8787/health
 ```
 
 ## Test

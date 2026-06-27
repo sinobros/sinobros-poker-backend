@@ -6,8 +6,9 @@ import { getMatch, setMatch, allMatches, getLeaderboard, addLeaderboardEntry } f
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
-const SSL_KEY = process.env.SSL_KEY;
-const SSL_CERT = process.env.SSL_CERT;
+const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN || 'golfmat.ch';
+const SSL_KEY = '/home/ubuntu/sinobros/sinobros.key';
+const SSL_CERT = '/home/ubuntu/sinobros/fullchain.cer';
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
@@ -64,10 +65,15 @@ function route(method, pathname) {
 }
 
 const requestHandler = async (req, res) => {
-  const url = new URL(req.url, `https://${req.headers.host || 'localhost'}`);
+res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+
+	const url = new URL(req.url, `https://${PUBLIC_DOMAIN}`);
   const pathname = url.pathname;
 
-  if (req.method === 'OPTIONS') return cors(res);
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
 
   const matched = route(req.method, pathname);
   if (!matched) return json(res, 404, { error: 'Not found' });
@@ -176,8 +182,8 @@ try {
     process.exit(1);
   });
 
-  server.listen(PORT, HOST, () => {
-    console.log(`SinoBros Poker API listening on HTTPS port ${PORT} (bound to ${HOST})`);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`SinoBros Poker API listening on https://${PUBLIC_DOMAIN}:${PORT} (bound to ${HOST})`);
   });
 } catch (err) {
   console.error('Failed to start server:', err);
