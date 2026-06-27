@@ -85,8 +85,30 @@ function compareHands(sevenA, sevenB) {
   return compareEval(bestHand(sevenA), bestHand(sevenB));
 }
 
+function bestOmahaHand(holeCards, boardCards) {
+  if (!Array.isArray(holeCards) || holeCards.length !== 4) {
+    throw new Error('Omaha requires exactly 4 hole cards');
+  }
+  if (!Array.isArray(boardCards) || boardCards.length < 3) {
+    throw new Error('Omaha requires at least 3 board cards');
+  }
+
+  let best = null;
+  for (const holes of combinations(holeCards, 2)) {
+    for (const board of combinations(boardCards, 3)) {
+      const ev = evaluate5([...holes, ...board]);
+      if (!best || compareEval(ev, best) > 0) best = ev;
+    }
+  }
+  return best;
+}
+
+function compareOmahaHands(holeA, holeB, boardCards) {
+  return compareEval(bestOmahaHand(holeA, boardCards), bestOmahaHand(holeB, boardCards));
+}
+
 const HAND_RANK_NAMES = Object.fromEntries(
   Object.entries(HAND_RANKS).map(([name, rank]) => [rank, name])
 );
 
-module.exports = { bestHand, compareHands, HAND_RANK_NAMES };
+module.exports = { bestHand, compareHands, bestOmahaHand, compareOmahaHands, HAND_RANK_NAMES };

@@ -84,12 +84,12 @@ app.get('/api/matches', (req, res) => {
 });
 
 app.post('/api/matches', pokerHandler((req, res) => {
-  const { handle } = req.body;
+  const { handle, game } = req.body;
   if (!handle) return res.status(400).json({ error: 'handle required' });
 
   const matchId = generateMatchCode();
   const playerId = randomUUID();
-  const match = createMatch(matchId, playerId, handle);
+  const match = createMatch(matchId, playerId, handle, game);
   setMatch(matchId, match);
 
   return res.status(201).json({ matchId, playerId, state: publicState(match, playerId) });
@@ -102,11 +102,11 @@ app.post('/api/matches/:id/join', pokerHandler((req, res) => {
   const match = getMatch(matchId);
   if (!match) return res.status(404).json({ error: 'Match not found' });
 
-  const { handle } = req.body;
+  const { handle, game } = req.body;
   if (!handle) return res.status(400).json({ error: 'handle required' });
 
   const playerId = randomUUID();
-  joinMatch(match, playerId, handle);
+  joinMatch(match, playerId, handle, game);
   setMatch(matchId, match);
 
   return res.json({ playerId, state: publicState(match, playerId) });

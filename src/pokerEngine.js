@@ -1,10 +1,22 @@
-const { compareHands, bestHand, HAND_RANK_NAMES } = require('./pokerEvaluator');
+const { compareHands, compareOmahaHands, bestHand, bestOmahaHand, HAND_RANK_NAMES } = require('./pokerEvaluator');
 
 const SUITS = ['s', 'h', 'd', 'c'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 const STARTING_STACK = 1500;
 const SMALL_BLIND = 10;
 const BIG_BLIND = 20;
+const GAMES = {
+  holdem: { holeCards: 2, betting: 'no-limit' },
+  plo: { holeCards: 4, betting: 'pot-limit' },
+};
+
+function normalizeGame(game) {
+  return game === 'plo' ? 'plo' : 'holdem';
+}
+
+function gameRules(match) {
+  return GAMES[normalizeGame(match.game)];
+}
 
 function makeDeck() {
   const deck = [];
@@ -25,9 +37,10 @@ function shuffle(deck) {
   return d;
 }
 
-function createMatch(matchId, player1Id, player1Handle) {
+function createMatch(matchId, player1Id, player1Handle, game = 'holdem') {
   return {
     matchId,
+    game: normalizeGame(game),
     phase: 'waiting',
     players: [
       { id: player1Id, handle: player1Handle, stack: STARTING_STACK, seat: 0 },
@@ -39,9 +52,11 @@ function createMatch(matchId, player1Id, player1Handle) {
   };
 }
 
-function joinMatch(match, player2Id, player2Handle) {
+function joinMatch(match, player2Id, player2Handle, game = null) {
   if (match.phase !== 'waiting') throw new Error('Match not open');
   if (match.players.length >= 2) throw new Error('Match full');
+  if (game && normalizeGame(game) !== normalizeGame(match.game)) throw new Error(`Match is for ${normalizeGame(match.game)}`);
+  match.game = normalizeGame(match.game);
   match.players.push({ id: player2Id, handle: player2Handle, stack: STARTING_STACK, seat: 1 });
   match.events.push({ t: Date.now(), msg: `${player2Handle} joined` });
   match.phase = 'playing';
@@ -49,11 +64,13 @@ function joinMatch(match, player2Id, player2Handle) {
 }
 
 function startHand(match) {
+  match.game = normalizeGame(match.game);
+  const rules = gameRules(match);
   const buttonSeat = match.handsPlayed % 2 === 0 ? 0 : 1;
   const bbSeat = 1 - buttonSeat;
   const deck = shuffle(makeDeck());
-  const buttonHoles = [deck.shift(), deck.shift()];
-  const bbHoles = [deck.shift(), deck.shift()];
+  const buttonHoles = Array.from({ length: rules.holeCards }, () => deck.shift());
+  const bbHoles = Array.from({ length: rules.holeCards }, () => deck.shift());
   const holes = {
     [match.players[buttonSeat].id]: buttonHoles,
     [match.players[bbSeat].id]: bbHoles,
@@ -102,6 +119,7 @@ function applyAction(match, playerId, action, amount) {
   const myBet = hand.bets[actor.id] || 0;
   const oppBet = hand.bets[opponent.id] || 0;
   const outstanding = oppBet - myBet;
+  const legalAction = getLegalActions(match, playerId).find(option => option.action === action);
 
   switch (action) {
     case 'fold': {
@@ -133,16 +151,22 @@ function applyAction(match, playerId, action, amount) {
 
     case 'bet':
     case 'raise': {
-      if (!amount || amount <= 0) throw new Error('Amount required');
+      const requestedAmount = Number(amount);
+      if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) throw new Error('Amount required');
       if (action === 'bet' && outstanding > 0) throw new Error('Cannot bet - use raise');
       if (action === 'raise' && outstanding <= 0) throw new Error('Cannot raise - use bet');
+      if (!legalAction) throw new Error(`${action} is not currently legal`);
 
-      const minCommit = outstanding + hand.lastRaiseSize;
-      if (amount < minCommit && amount < actor.stack) {
+      const minCommit = legalAction.min;
+      const maxCommit = legalAction.max;
+      if (requestedAmount < minCommit && requestedAmount < actor.stack) {
         throw new Error(`Min ${action} commit is ${minCommit} (or all-in)`);
       }
+      if (requestedAmount > maxCommit) {
+        throw new Error(`Max ${action} commit is ${maxCommit}`);
+      }
 
-      const contribution = Math.min(amount, actor.stack);
+      const contribution = requestedAmount;
       actor.stack -= contribution;
       hand.bets[actor.id] = myBet + contribution;
       hand.pot += contribution;
@@ -154,6 +178,7 @@ function applyAction(match, playerId, action, amount) {
     }
 
     case 'all-in': {
+      if (!legalAction) throw new Error('All-in is not currently legal');
       const allInAmt = actor.stack;
       actor.stack = 0;
       hand.bets[actor.id] = myBet + allInAmt;
@@ -251,25 +276,27 @@ function runOutBoard(match) {
 function doShowdown(match) {
   const hand = match.hand;
   const [p0, p1] = match.players;
-  const cards0 = [...hand.holes[p0.id], ...hand.community];
-  const cards1 = [...hand.holes[p1.id], ...hand.community];
-  const cmp = compareHands(cards0, cards1);
+  const holes0 = hand.holes[p0.id];
+  const holes1 = hand.holes[p1.id];
+  const cmp = normalizeGame(match.game) === 'plo'
+    ? compareOmahaHands(holes0, holes1, hand.community)
+    : compareHands([...holes0, ...hand.community], [...holes1, ...hand.community]);
   let winnerId;
   let reason;
 
   if (cmp > 0) {
     winnerId = p0.id;
-    reason = `${p0.handle} wins with ${describeHand(cards0)}`;
+    reason = `${p0.handle} wins with ${describeHand(match, p0.id)}`;
   } else if (cmp < 0) {
     winnerId = p1.id;
-    reason = `${p1.handle} wins with ${describeHand(cards1)}`;
+    reason = `${p1.handle} wins with ${describeHand(match, p1.id)}`;
   } else {
     const half = Math.floor(hand.pot / 2);
     p0.stack += half;
     p1.stack += hand.pot - half;
     hand.status = 'showdown';
     hand.result = { winner: null, reason: 'Tie - pot split', holes: hand.holes };
-    match.events.push({ t: Date.now(), msg: `Showdown - Tie! Pot split. ${describeHand(cards0)} vs ${describeHand(cards1)}` });
+    match.events.push({ t: Date.now(), msg: `Showdown - Tie! Pot split. ${describeHand(match, p0.id)} vs ${describeHand(match, p1.id)}` });
     match.handsPlayed++;
     return;
   }
@@ -281,8 +308,12 @@ function doShowdown(match) {
   checkMatchOver(match);
 }
 
-function describeHand(sevenCards) {
-  const ev = bestHand(sevenCards);
+function describeHand(match, playerId) {
+  const hand = match.hand;
+  const holes = hand.holes[playerId];
+  const ev = normalizeGame(match.game) === 'plo'
+    ? bestOmahaHand(holes, hand.community)
+    : bestHand([...holes, ...hand.community]);
   return HAND_RANK_NAMES[ev.rank].replace(/_/g, ' ').toLowerCase();
 }
 
@@ -335,9 +366,11 @@ function publicState(match, viewerPlayerId) {
 
   return {
     matchId: match.matchId,
+    game: normalizeGame(match.game),
     phase: match.phase,
     winner: match.winner,
     handsPlayed: match.handsPlayed,
+    blinds: { small: SMALL_BLIND, big: BIG_BLIND },
     players,
     hand: hand ? {
       street: hand.street,
@@ -358,30 +391,39 @@ function getLegalActions(match, playerId) {
   const hand = match.hand;
   const actor = match.players.find(player => player.id === playerId);
   const opponent = match.players.find(player => player.id !== playerId);
+  if (!hand || !actor || !opponent || hand.status !== 'active') return [];
+
   const myBet = hand.bets[actor.id] || 0;
   const oppBet = hand.bets[opponent.id] || 0;
   const outstanding = oppBet - myBet;
+  const minBet = Math.min(hand.lastRaiseSize, actor.stack);
   const actions = [];
 
   if (outstanding === 0) {
     actions.push({ action: 'check' });
-    if (actor.stack > 0) {
-      actions.push({ action: 'bet', min: Math.min(hand.lastRaiseSize, actor.stack) });
+    if (actor.stack >= minBet && minBet > 0) {
+      actions.push({ action: 'bet', min: minBet, max: maxCommit(match, actor, outstanding) });
     }
   } else {
     actions.push({ action: 'fold' });
     actions.push({ action: 'call', amount: Math.min(outstanding, actor.stack) });
     const minRaise = outstanding + hand.lastRaiseSize;
     if (actor.stack > outstanding) {
-      actions.push({ action: 'raise', min: Math.min(minRaise, actor.stack) });
+      actions.push({ action: 'raise', min: Math.min(minRaise, actor.stack), max: maxCommit(match, actor, outstanding) });
     }
   }
 
-  if (actor.stack > 0) {
+  if (actor.stack > 0 && actor.stack <= maxCommit(match, actor, outstanding)) {
     actions.push({ action: 'all-in', amount: actor.stack });
   }
 
   return actions;
+}
+
+function maxCommit(match, actor, outstanding) {
+  if (actor.stack <= 0) return 0;
+  if (gameRules(match).betting !== 'pot-limit') return actor.stack;
+  return Math.min(actor.stack, match.hand.pot + (2 * Math.max(outstanding, 0)));
 }
 
 module.exports = { createMatch, joinMatch, applyAction, applyNextHand, publicState };
