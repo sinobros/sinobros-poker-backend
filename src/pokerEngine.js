@@ -1,6 +1,4 @@
-// Heads-up No-Limit Texas Hold'em state machine
-
-import { compareHands, bestHand, HAND_RANK_NAMES } from './evaluator.js';
+const { compareHands, bestHand, HAND_RANK_NAMES } = require('./pokerEvaluator');
 
 const SUITS = ['s', 'h', 'd', 'c'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
@@ -10,7 +8,11 @@ const BIG_BLIND = 20;
 
 function makeDeck() {
   const deck = [];
-  for (const s of SUITS) for (const r of RANKS) deck.push(r + s);
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      deck.push(rank + suit);
+    }
+  }
   return deck;
 }
 
@@ -23,10 +25,10 @@ function shuffle(deck) {
   return d;
 }
 
-export function createMatch(matchId, player1Id, player1Handle) {
+function createMatch(matchId, player1Id, player1Handle) {
   return {
     matchId,
-    phase: 'waiting',      // waiting | playing | complete
+    phase: 'waiting',
     players: [
       { id: player1Id, handle: player1Handle, stack: STARTING_STACK, seat: 0 },
     ],
@@ -37,7 +39,7 @@ export function createMatch(matchId, player1Id, player1Handle) {
   };
 }
 
-export function joinMatch(match, player2Id, player2Handle) {
+function joinMatch(match, player2Id, player2Handle) {
   if (match.phase !== 'waiting') throw new Error('Match not open');
   if (match.players.length >= 2) throw new Error('Match full');
   match.players.push({ id: player2Id, handle: player2Handle, stack: STARTING_STACK, seat: 1 });
@@ -47,36 +49,26 @@ export function joinMatch(match, player2Id, player2Handle) {
 }
 
 function startHand(match) {
-  const [p0, p1] = match.players;
-  // Button alternates each hand; first hand: player 0 is button (small blind)
   const buttonSeat = match.handsPlayed % 2 === 0 ? 0 : 1;
   const bbSeat = 1 - buttonSeat;
-
   const deck = shuffle(makeDeck());
-
-  // deal 2 hole cards to each player — button first
   const buttonHoles = [deck.shift(), deck.shift()];
   const bbHoles = [deck.shift(), deck.shift()];
+  const holes = {
+    [match.players[buttonSeat].id]: buttonHoles,
+    [match.players[bbSeat].id]: bbHoles,
+  };
 
-  const holes = { [match.players[buttonSeat].id]: buttonHoles, [match.players[bbSeat].id]: bbHoles };
-
-  // post blinds — deduct from stacks
   const sbAmount = Math.min(SMALL_BLIND, match.players[buttonSeat].stack);
   const bbAmount = Math.min(BIG_BLIND, match.players[bbSeat].stack);
-
   match.players[buttonSeat].stack -= sbAmount;
   match.players[bbSeat].stack -= bbAmount;
-
-  const pot = sbAmount + bbAmount;
-
-  // preflop: button (SB) acts first in heads-up
-  const actorSeat = buttonSeat;
 
   match.hand = {
     deck,
     community: [],
     holes,
-    pot,
+    pot: sbAmount + bbAmount,
     street: 'preflop',
     buttonSeat,
     bbSeat,
@@ -84,12 +76,12 @@ function startHand(match) {
       [match.players[buttonSeat].id]: sbAmount,
       [match.players[bbSeat].id]: bbAmount,
     },
-    toCall: bbAmount - sbAmount,   // SB owes this much more to call
+    toCall: bbAmount - sbAmount,
     lastRaiseSize: BIG_BLIND,
-    actorSeat,
+    actorSeat: buttonSeat,
     streetActCount: 0,
-    lastAggressor: match.players[bbSeat].id,  // BB is last aggressor preflop
-    status: 'active',   // active | showdown | folded | allin
+    lastAggressor: match.players[bbSeat].id,
+    status: 'active',
     result: null,
   };
 
@@ -99,7 +91,7 @@ function startHand(match) {
   });
 }
 
-export function applyAction(match, playerId, action, amount) {
+function applyAction(match, playerId, action, amount) {
   const hand = match.hand;
   if (!hand || hand.status !== 'active') throw new Error('No active hand');
 
@@ -109,7 +101,7 @@ export function applyAction(match, playerId, action, amount) {
   const opponent = match.players[1 - hand.actorSeat];
   const myBet = hand.bets[actor.id] || 0;
   const oppBet = hand.bets[opponent.id] || 0;
-  const outstanding = oppBet - myBet;  // how much actor still owes
+  const outstanding = oppBet - myBet;
 
   switch (action) {
     case 'fold': {
@@ -123,7 +115,7 @@ export function applyAction(match, playerId, action, amount) {
     }
 
     case 'check':
-      if (outstanding > 0) throw new Error('Cannot check — must call, raise, or fold');
+      if (outstanding > 0) throw new Error('Cannot check - must call, raise, or fold');
       match.events.push({ t: Date.now(), msg: `${actor.handle} checks` });
       hand.streetActCount++;
       break;
@@ -142,11 +134,9 @@ export function applyAction(match, playerId, action, amount) {
     case 'bet':
     case 'raise': {
       if (!amount || amount <= 0) throw new Error('Amount required');
-      if (action === 'bet' && outstanding > 0) throw new Error('Cannot bet — use raise');
-      if (action === 'raise' && outstanding <= 0) throw new Error('Cannot raise — use bet');
+      if (action === 'bet' && outstanding > 0) throw new Error('Cannot bet - use raise');
+      if (action === 'raise' && outstanding <= 0) throw new Error('Cannot raise - use bet');
 
-      // `amount` is the number of chips the acting player commits now.
-      // For a raise it includes the call plus the raise increment.
       const minCommit = outstanding + hand.lastRaiseSize;
       if (amount < minCommit && amount < actor.stack) {
         throw new Error(`Min ${action} commit is ${minCommit} (or all-in)`);
@@ -179,37 +169,30 @@ export function applyAction(match, playerId, action, amount) {
       throw new Error(`Unknown action: ${action}`);
   }
 
-  // In heads-up, once either player is all-in and bets are matched, no more betting
-  // is possible; deal the remaining board cards and go straight to showdown.
-  const betsNow = match.players.map(p => hand.bets[p.id] || 0);
+  const betsNow = match.players.map(player => hand.bets[player.id] || 0);
   if ((match.players[0].stack === 0 || match.players[1].stack === 0) && betsNow[0] === betsNow[1]) {
     runOutBoard(match);
     doShowdown(match);
     return;
   }
 
-  // check if both players all-in — skip to showdown
   if (match.players[0].stack === 0 && match.players[1].stack === 0) {
     runOutBoard(match);
     doShowdown(match);
     return;
   }
 
-  // check if actor is all-in and street is done
   if (actor.stack === 0) {
     const newOutstanding = hand.bets[opponent.id] - hand.bets[actor.id];
     if (newOutstanding <= 0) {
-      // opponent covered or equal — deal remaining streets and showdown
       runOutBoard(match);
       doShowdown(match);
       return;
     }
-    // opponent still has to respond — swap actor
     hand.actorSeat = 1 - hand.actorSeat;
     return;
   }
 
-  // advance street or swap actor
   if (bettingClosed(match)) {
     advanceStreet(match);
   } else {
@@ -224,14 +207,6 @@ function bettingClosed(match) {
   const bet1 = hand.bets[p1.id] || 0;
 
   if (bet0 !== bet1) return false;
-
-  // On preflop, BB has option — betting isn't closed until BB acts too
-  // streetActCount tracks how many actions have occurred this street
-  if (hand.street === 'preflop') {
-    // Need at least 2 actions (SB + BB at minimum) and bets equal
-    return hand.streetActCount >= 2;
-  }
-  // Postflop: both have acted at least once and bets are equal
   return hand.streetActCount >= 2;
 }
 
@@ -262,7 +237,6 @@ function advanceStreet(match) {
       return;
   }
 
-  // postflop: BB acts first (non-button acts first)
   hand.actorSeat = hand.bbSeat;
 }
 
@@ -277,12 +251,11 @@ function runOutBoard(match) {
 function doShowdown(match) {
   const hand = match.hand;
   const [p0, p1] = match.players;
-
   const cards0 = [...hand.holes[p0.id], ...hand.community];
   const cards1 = [...hand.holes[p1.id], ...hand.community];
-
   const cmp = compareHands(cards0, cards1);
-  let winnerId, reason;
+  let winnerId;
+  let reason;
 
   if (cmp > 0) {
     winnerId = p0.id;
@@ -291,13 +264,12 @@ function doShowdown(match) {
     winnerId = p1.id;
     reason = `${p1.handle} wins with ${describeHand(cards1)}`;
   } else {
-    // split pot
     const half = Math.floor(hand.pot / 2);
     p0.stack += half;
     p1.stack += hand.pot - half;
     hand.status = 'showdown';
-    hand.result = { winner: null, reason: 'Tie — pot split', holes: hand.holes };
-    match.events.push({ t: Date.now(), msg: `Showdown — Tie! Pot split. ${describeHand(cards0)} vs ${describeHand(cards1)}` });
+    hand.result = { winner: null, reason: 'Tie - pot split', holes: hand.holes };
+    match.events.push({ t: Date.now(), msg: `Showdown - Tie! Pot split. ${describeHand(cards0)} vs ${describeHand(cards1)}` });
     match.handsPlayed++;
     return;
   }
@@ -305,7 +277,7 @@ function doShowdown(match) {
   awardPot(match, winnerId);
   hand.status = 'showdown';
   hand.result = { winner: winnerId, reason, holes: hand.holes };
-  match.events.push({ t: Date.now(), msg: `Showdown — ${reason}` });
+  match.events.push({ t: Date.now(), msg: `Showdown - ${reason}` });
   checkMatchOver(match);
 }
 
@@ -315,50 +287,51 @@ function describeHand(sevenCards) {
 }
 
 function awardPot(match, winnerId) {
-  const winner = match.players.find(p => p.id === winnerId);
+  const winner = match.players.find(player => player.id === winnerId);
   winner.stack += match.hand.pot;
   match.hand.pot = 0;
   match.handsPlayed++;
 }
 
 function checkMatchOver(match) {
-  for (const p of match.players) {
-    if (p.stack === 0) {
-      const winner = match.players.find(q => q.id !== p.id);
+  for (const player of match.players) {
+    if (player.stack === 0) {
+      const winner = match.players.find(other => other.id !== player.id);
       match.phase = 'complete';
       match.winner = winner.id;
-      match.events.push({ t: Date.now(), msg: `Match over — ${winner.handle} wins!` });
+      match.events.push({ t: Date.now(), msg: `Match over - ${winner.handle} wins!` });
     }
   }
 }
 
-export function applyNextHand(match, playerId) {
+function applyNextHand(match, playerId) {
   if (match.phase !== 'playing') throw new Error('Match not in playing state');
   const hand = match.hand;
   if (!hand || hand.status === 'active') throw new Error('Hand still in progress');
-  if (!match.players.find(p => p.id === playerId)) throw new Error('Not a player');
+  if (!match.players.find(player => player.id === playerId)) throw new Error('Not a player');
   startHand(match);
 }
 
-export function publicState(match, viewerPlayerId) {
+function publicState(match, viewerPlayerId) {
   const hand = match.hand;
   const showHoles = hand && (hand.status === 'showdown' || hand.status === 'folded' || hand.status === 'allin');
 
-  const players = match.players.map(p => {
+  const players = match.players.map(player => {
     let holes = null;
     if (hand) {
-      if (p.id === viewerPlayerId) {
-        holes = hand.holes[p.id];
-      } else if (showHoles && hand.result?.holes) {
-        holes = hand.result.holes[p.id];
+      if (player.id === viewerPlayerId) {
+        holes = hand.holes[player.id];
+      } else if (showHoles && hand.result && hand.result.holes) {
+        holes = hand.result.holes[player.id];
       }
     }
-    return { id: p.id, handle: p.handle, stack: p.stack, seat: p.seat, holes };
+    return { id: player.id, handle: player.handle, stack: player.stack, seat: player.seat, holes };
   });
 
-  const actorId = hand ? match.players[hand.actorSeat]?.id : null;
+  const actorId = hand ? match.players[hand.actorSeat] && match.players[hand.actorSeat].id : null;
   const legalActions = hand && hand.status === 'active' && actorId === viewerPlayerId
-    ? getLegalActions(match, viewerPlayerId) : [];
+    ? getLegalActions(match, viewerPlayerId)
+    : [];
 
   return {
     matchId: match.matchId,
@@ -383,8 +356,8 @@ export function publicState(match, viewerPlayerId) {
 
 function getLegalActions(match, playerId) {
   const hand = match.hand;
-  const actor = match.players.find(p => p.id === playerId);
-  const opponent = match.players.find(p => p.id !== playerId);
+  const actor = match.players.find(player => player.id === playerId);
+  const opponent = match.players.find(player => player.id !== playerId);
   const myBet = hand.bets[actor.id] || 0;
   const oppBet = hand.bets[opponent.id] || 0;
   const outstanding = oppBet - myBet;
@@ -410,3 +383,5 @@ function getLegalActions(match, playerId) {
 
   return actions;
 }
+
+module.exports = { createMatch, joinMatch, applyAction, applyNextHand, publicState };

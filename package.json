@@ -1,14 +1,14 @@
 {
-  "name": "sinobros-poker-backend",
+  "name": "highscore-api",
   "version": "1.0.0",
-  "description": "SinoBros Heads-Up Texas Hold'em REST backend",
-  "main": "server.js",
-  "type": "module",
+  "description": "Highscore REST API with Express and SQLite",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test test/index.test.js"
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
   },
-  "engines": {
-    "node": ">=18"
+  "dependencies": {
+    "express": "^4.19.2",
+    "sql.js": "^1.12.0"
   }
 }
